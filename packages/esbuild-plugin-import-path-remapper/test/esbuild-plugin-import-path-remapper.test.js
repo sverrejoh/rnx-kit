@@ -5,7 +5,7 @@ describe("@rnx-kit/esbuild-plugin-import-path-remapper", () => {
   const esbuild = require("esbuild");
   const ImportPathRemapperPlugin = require("../src/index");
 
-  test("remaps main imports from lib to src.", async () => {
+  test("remaps toplevel imports from lib to src with `main` field in package.json.", async () => {
     const result = await esbuild.build({
       entryPoints: ["./test/__fixtures__/import-@test-pkg.ts"],
       bundle: true,
@@ -20,7 +20,37 @@ describe("@rnx-kit/esbuild-plugin-import-path-remapper", () => {
     );
   });
 
-  test("remaps import paths from lib to src.", async () => {
+  test("remaps toplevel imports from lib to src with `module` field in package.json.", async () => {
+    const result = await esbuild.build({
+      entryPoints: ["./test/__fixtures__/import-@test-pkg-module.ts"],
+      bundle: true,
+      write: false,
+      plugins: [ImportPathRemapperPlugin(/@test/)],
+    });
+
+    const output = String.fromCodePoint(...result.outputFiles[0].contents);
+    expect(output).toEqual(expect.stringContaining('location = "src/index"'));
+    expect(output).toEqual(
+      expect.not.stringContaining('location = "lib/index"')
+    );
+  });
+
+  test("remaps import paths from lib to src with `main` field in package.json.", async () => {
+    const result = await esbuild.build({
+      entryPoints: ["./test/__fixtures__/import-@test-pkg-lib-test.ts"],
+      bundle: true,
+      write: false,
+      plugins: [ImportPathRemapperPlugin(/@test/)],
+    });
+
+    const output = String.fromCodePoint(...result.outputFiles[0].contents);
+    expect(output).toEqual(expect.stringContaining('location = "src/file"'));
+    expect(output).toEqual(
+      expect.not.stringContaining('location = "lib/file"')
+    );
+  });
+
+  test("remaps import paths from lib to src with `module` field in package.json.", async () => {
     const result = await esbuild.build({
       entryPoints: ["./test/__fixtures__/import-@test-pkg-lib-test.ts"],
       bundle: true,

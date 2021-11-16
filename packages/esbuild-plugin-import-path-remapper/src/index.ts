@@ -26,20 +26,25 @@ const findMainSourceFile = (
     return undefined;
   }
 
-  const { main } = require(packageJsonPath);
-  const remappedPath = `${sourcePath}/${main.replace(
-    /^(?:\.\/)?lib\/(.*)\.jsx?/,
-    "src/$1"
-  )}`;
+  const packageJson = require(packageJsonPath);
+  for (const packageField of ["module", "main"]) {
+    const path = packageJson[packageField];
+    if (path) {
+      const remappedPath = `${sourcePath}/${path.replace(
+        /^(?:\.\/)?lib\/(.*)\.jsx?/,
+        "src/$1"
+      )}`;
 
-  for (const extension of [".ts", ".tsx"]) {
-    const resolved = resolvePath(`${remappedPath}${extension}`, resolveDir);
-    if (resolved) {
-      return resolved;
+      for (const extension of [".ts", ".tsx"]) {
+        const resolved = resolvePath(`${remappedPath}${extension}`, resolveDir);
+        if (resolved) {
+          return resolved;
+        }
+      }
+
+      return undefined;
     }
   }
-
-  return undefined;
 };
 
 const resolvePathToLib = (

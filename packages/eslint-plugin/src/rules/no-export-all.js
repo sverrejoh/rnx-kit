@@ -6,7 +6,7 @@
  * @typedef {import("eslint").Linter.Config} Config
  * @typedef {import("eslint").Rule.RuleContext} ESLintRuleContext
  * @typedef {import("eslint").Rule.ReportFixer} ESLintReportFixer
- * @typedef {{ exports: string[], types: string[] }} NamedExports
+ * @typedef {{ exports: string[], types: string[], hasDefault: boolean }} NamedExports
  *
  * @typedef {{
  *   id: ESLintRuleContext["id"];
@@ -161,6 +161,7 @@ function toRuleContext(context) {
       debug: false,
       expand: "all",
       maxDepth: 5,
+      fixEmptyExports: "suggest-only",
       ...(context.options && context.options[0]),
     },
     filename: context.filename || context.getFilename(),
@@ -255,12 +256,18 @@ function extractExports(context, moduleId, depth) {
     const exports = new Set();
     /** @type {Set<string>} */
     const types = new Set();
+    /** @type {boolean} */
+    let hasDefault = false;
 
     const traverser = makeTraverser();
     traverser.traverse(ast, {
       /** @type {(node: Node, parent: Node) => void} */
       enter: (node, parent) => {
         switch (node.type) {
+          case "ExportDefaultDeclaration":
+            hasDefault = true;
+            break;
+
           case "ExportNamedDeclaration": {
             if (parent.type === "TSModuleBlock") {
               // The module or namespace is already exported.
@@ -380,6 +387,7 @@ function extractExports(context, moduleId, depth) {
     return {
       exports: [...exports],
       types: [...types],
+      hasDefault,
     };
   } catch (e) {
     if (context.options.debug) {
@@ -401,6 +409,7 @@ module.exports = {
       url: require("../../package.json").homepage,
     },
     fixable: "code",
+    hasSuggestions: true,
     schema: [
       {
         type: "object",
@@ -408,6 +417,7 @@ module.exports = {
           debug: { type: "boolean" },
           expand: { enum: ["all", "external-only"] },
           maxDepth: { type: "number" },
+          fixEmptyExports: { enum: ["suggest-only", "import", "export-default", "remove"] },
         },
         additionalProperties: false,
       },
@@ -415,7 +425,7 @@ module.exports = {
   },
   create: (context) => {
     const ruleContext = toRuleContext(context);
-    const { expand, maxDepth } = ruleContext.options;
+    const { expand, maxDepth, fixEmptyExports } = ruleContext.options;
     return {
       ExportAllDeclaration: (node) => {
         const source = node.source.value;
@@ -427,32 +437,84 @@ module.exports = {
         }
 
         const result = extractExports(ruleContext, source, maxDepth);
+
+        // Handle case when module has no named exports
+        if (isEmpty(result)) {
+          const hasDefault = result && result.hasDefault;
+
+          // Determine the fix based on fixEmptyExports option
+          let fix = null;
+          if (fixEmptyExports !== "suggest-only") {
+            fix = (fixer) => {
+              if (fixEmptyExports === "import") {
+                return fixer.replaceText(node, `import ${node.source.raw};`);
+              } else if (fixEmptyExports === "export-default" && hasDefault) {
+                return fixer.replaceText(node, `export { default } from ${node.source.raw};`);
+              } else if (fixEmptyExports === "export-default" && !hasDefault) {
+                // Fallback to import if no default exists
+                return fixer.replaceText(node, `import ${node.source.raw};`);
+              } else if (fixEmptyExports === "remove") {
+                return fixer.remove(node);
+              }
+              return null;
+            };
+          }
+
+          // Build suggestions
+          const suggestions = [];
+          suggestions.push({
+            desc: "Convert to side-effect import (preserves current behavior)",
+            fix: (fixer) => fixer.replaceText(node, `import ${node.source.raw};`),
+          });
+
+          if (hasDefault) {
+            suggestions.push({
+              desc: "Export default as named export (changes behavior - exports the default)",
+              fix: (fixer) => fixer.replaceText(node, `export { default } from ${node.source.raw};`),
+            });
+          }
+
+          suggestions.push({
+            desc: "Remove export statement (if module has no needed side effects)",
+            fix: (fixer) => fixer.remove(node),
+          });
+
+          context.report({
+            node,
+            message: hasDefault
+              ? "export * from a module with only a default export has no effect. This likely indicates a logical error."
+              : "export * from a module with no named exports has no effect. This likely indicates a logical error.",
+            fix,
+            suggest: suggestions,
+          });
+          return;
+        }
+
+        // Normal case: module has named exports, expand them
         context.report({
           node,
           message:
             "Prefer explicit exports over `export *` to avoid name clashes, and improve tree-shakeability.",
-          fix: isEmpty(result)
-            ? null
-            : (fixer) => {
-                /** @type {string[]} */
-                const lines = [];
-                if (result.types.length > 0) {
-                  const uniqueTypes = result.types.filter(
-                    (type) => !result.exports.includes(type)
-                  );
-                  if (uniqueTypes.length > 0) {
-                    const types = uniqueTypes.sort().join(", ");
-                    lines.push(
-                      `export type { ${types} } from ${node.source.raw};`
-                    );
-                  }
-                }
-                if (result.exports.length > 0) {
-                  const names = result.exports.sort().join(", ");
-                  lines.push(`export { ${names} } from ${node.source.raw};`);
-                }
-                return fixer.replaceText(node, lines.join("\n"));
-              },
+          fix: (fixer) => {
+            /** @type {string[]} */
+            const lines = [];
+            if (result.types.length > 0) {
+              const uniqueTypes = result.types.filter(
+                (type) => !result.exports.includes(type)
+              );
+              if (uniqueTypes.length > 0) {
+                const types = uniqueTypes.sort().join(", ");
+                lines.push(
+                  `export type { ${types} } from ${node.source.raw};`
+                );
+              }
+            }
+            if (result.exports.length > 0) {
+              const names = result.exports.sort().join(", ");
+              lines.push(`export { ${names} } from ${node.source.raw};`);
+            }
+            return fixer.replaceText(node, lines.join("\n"));
+          },
         });
       },
     };

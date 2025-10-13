@@ -90,9 +90,50 @@ module.exports = [
 
 - ✓: Enabled with `@rnx-kit/eslint-plugin/recommended`
 - 🔧: Fixable with `--fix`
+- 💡: Provides suggestions in IDE/editor
 
 |  ✓  | 🔧  | Rule                                                                                                                                                                   | Description                                                                                                                                                                                                                                                                                                     |
 | :-: | :-: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 |  ✓  |     | [`@rnx-kit/no-const-enum`](https://github.com/microsoft/rnx-kit/blob/main/packages/eslint-plugin/src/rules/no-const-enum.js)                                           | disallow `const enum` ([why is it bad?](https://hackmd.io/bBcd6R-1TB6Zq95PSquooQ))                                                                                                                                                                                                                              |
-|  ✓  | 🔧  | [`@rnx-kit/no-export-all`](https://github.com/microsoft/rnx-kit/blob/main/packages/eslint-plugin/src/rules/no-export-all.js)                                           | disallow `export *` ([why is it bad?](https://hackmd.io/Z021hgSGStKlYLwsqNMOcg))                                                                                                                                                                                                                                |
+|  ✓  | 🔧💡 | [`@rnx-kit/no-export-all`](https://github.com/microsoft/rnx-kit/blob/main/packages/eslint-plugin/src/rules/no-export-all.js)                                           | disallow `export *` ([why is it bad?](https://hackmd.io/Z021hgSGStKlYLwsqNMOcg)) - also provides suggestions 💡 when auto-fix isn't safe                                                                                                                                                                        |
 |  ✓  |     | [`@rnx-kit/no-foreach-with-captured-variables`](https://github.com/microsoft/rnx-kit/blob/main/packages/eslint-plugin/src/rules/no-foreach-with-captured-variables.js) | disallow `forEach` with outside variables; JavaScript is not efficient when it comes to using variables defined outside of its scope, and repeatedly calling that function can lead to performance issues. By using a `for...of` loop, you can avoid these performance pitfalls and also it is easier to debug. |
+
+### `@rnx-kit/no-export-all` Options
+
+This rule automatically expands `export *` statements into explicit named exports when the target module has named exports. When a module has no named exports (only default export or side effects), the rule provides suggestions by default.
+
+#### `fixEmptyExports`
+
+Controls how to handle `export *` from modules with no named exports. This is a common logical error where `export *` does nothing.
+
+**Type:** `"suggest-only" | "import" | "export-default" | "remove"`
+**Default:** `"suggest-only"`
+
+**Options:**
+
+- `"suggest-only"` (default) - Don't auto-fix, only provide IDE suggestions. Safest option that requires manual review.
+- `"import"` - Auto-fix to `import "./module";` (preserves side effects, exports nothing)
+- `"export-default"` - Auto-fix to `export { default } from "./module";` when default exists, falls back to `import` otherwise
+- `"remove"` - Auto-fix by deleting the line (assumes no side effects needed)
+
+**Examples:**
+
+```javascript
+// Default behavior - provides suggestions only
+"@rnx-kit/no-export-all": "error"
+
+// Auto-fix to import statements (preserves runtime behavior)
+"@rnx-kit/no-export-all": ["error", { fixEmptyExports: "import" }]
+
+// Auto-fix to export defaults (changes what gets exported)
+"@rnx-kit/no-export-all": ["error", { fixEmptyExports: "export-default" }]
+```
+
+**When to use each option:**
+
+- Use `"suggest-only"` (default) for codebases where you want to manually review each case
+- Use `"import"` for bulk fixes when you want to preserve current runtime behavior
+- Use `"export-default"` when you're confident the defaults should be exported
+- Use `"remove"` when you're confident the imports are unnecessary dead code
+
+**Note:** `export *` from a module with no named exports does nothing - it doesn't export anything and only runs the module's side effects. This is usually a logical error that should be fixed.

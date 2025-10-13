@@ -5,6 +5,7 @@ jest.mock("fs");
 
 require("fs").__setMocks({
   barbarian: "export const name = 'Conan';",
+  "default-only": "export default 'DefaultValue';",
   chopper: `
 export enum Kind {
   Predator = 0,
@@ -161,6 +162,29 @@ describe("disallows `export *`", () => {
         code: "export * from '@fluentui/style-utilities';",
         errors: 1,
         output: "export { ZIndexes } from '@fluentui/style-utilities';",
+      },
+      {
+        code: "export * from 'default-only';",
+        errors: 1,
+        output: null,  // No auto-fix by default (suggest-only)
+      },
+      {
+        code: "export * from 'default-only';",
+        errors: 1,
+        output: "import 'default-only';",
+        options: [{ fixEmptyExports: "import" }],
+      },
+      {
+        code: "export * from 'default-only';",
+        errors: 1,
+        output: "export { default } from 'default-only';",
+        options: [{ fixEmptyExports: "export-default" }],
+      },
+      {
+        code: "export * from 'default-only';",
+        errors: 1,
+        output: "",
+        options: [{ fixEmptyExports: "remove" }],
       },
     ],
   });
